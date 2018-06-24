@@ -1,0 +1,141 @@
+---
+title: "Practical Machine Learning Course - Project"
+author: "Fernando Sibemberg"
+date: "24 de junho de 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website [here](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).  
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. We may use any of the other variables to predict with. 
+
+## Preparing the data
+
+First, we will load the data.
+
+```{r loading}
+# Download and load training dataset
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pml-training.csv")
+org_train <- read.csv("pml-training.csv", sep=",", header = T)
+dim(org_train)
+
+# Download and load testing dataset
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "pml-testing.csv")
+validate <- read.csv("pml-testing.csv", sep=",", header = T)
+dim(validate)
+
+```
+
+There a lot of variables (160) in both datasets.
+So, let's see if we can reduce those who have too much NAs or missing values.
+
+```{r Cleaning}
+# indexing those with 80%+ of NAs or blank
+col_index <- which(colSums(is.na(org_train) | org_train=="") > 0.8*nrow(org_train))
+# removing these columns
+clean_train <- org_train[,-col_index]
+dim(clean_train)
+
+```
+
+As we can see, we have reduced from 160 to 60 variables (columns).  
+So now, let's see the structure of this dataset.  
+
+```{r str}
+
+str(clean_train)
+
+```
+
+As we can see in the dataset, the first variable `X` is just the number of the line. As we can see, the outcome `classe` is ordered too. So, we could expect an overfitting model due to the way of the dataset was organized. In order to avoid it, we will remove the `X` column of the analysis.  
+We will also remove `user_name`, and the other variables related to `timestamp`, as they can overfit the model, due to the way that the experiment was designed.  
+
+```{r}
+clean_train <- clean_train[, -c(1:5)]
+dim(clean_train)
+```
+
+Now, let's split the training data in 2 chunks of data, for training some models in the larger one and test it on the smaller.  
+
+```{r splitting}
+# Creating a partition and splitting the data
+library(caret)
+set.seed(12345)
+inTrain = createDataPartition(clean_train$classe, p = 3/4, list=F)
+train = clean_train[ inTrain,]
+test = clean_train[-inTrain,]
+
+```
+
+## Fitting Models
+Using the training dataset, we will fit some models.  
+In order to have a faster data processing, we will choose the cross-validation method, with no repetition, `method="cv"`, and reduce the default number of folds, from 10 to 5, `number=5`. 
+
+```{r fitting}
+
+trControl <- trainControl(method="cv", number = 5, allowParallel = T)
+
+# Random Forest
+mod_rf <- train(classe~., data=train, method= "rf", trControl=trControl, verbose=F)
+
+#  Stochastic Gradient Boosting
+mod_gbm <- train(classe~., data=train, method= "gbm", trControl=trControl, verbose=F)
+
+# Linear Discriminant Analysis
+mod_lda <- train(classe~., data=train, method= "lda", trControl=trControl, verbose=F)
+
+```
+
+## Predicting
+
+Now, we will predict the `classe` value of the `test` dataset in all these different models.
+
+```{r Predicting}
+
+pred_rf <- predict(mod_rf,test)
+pred_gbm <- predict(mod_gbm, test)
+pred_lda <- predict(mod_lda, test)
+
+```
+
+## Accuracy Evaluation
+
+Now that we already have 3 models and their predictions, let's compare their performances.
+
+```{r Accuracy}
+
+confusionMatrix(pred_rf, test$classe)$overall[1]
+confusionMatrix(pred_gbm, test$classe)$overall[1]
+confusionMatrix(pred_lda, test$classe)$overall[1]
+
+```
+
+As we can see, the best fitted model was the *Random Forest*, with an accuracy of 99.67%, and an expected out-of-sample error of, at least, 0.33%.  
+Therefore, we will use this method for predicting `classe` in the original test dataset, `validate`.  
+Before it, let's try to understand the most important variables.  
+
+```{r Importance}
+
+importance <- varImp(mod_rf)
+importance
+
+```
+
+## Conclusion
+
+As we have choosed the Random Forest method, let's predict the `classe` values of the `validate` dataset, using it.
+
+```{r Validate}
+
+pred_val <- predict(mod_rf,validate)
+pred_val
+
+```
+
+
